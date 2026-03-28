@@ -1,170 +1,81 @@
 import cv2
 import os
-import json
 
+# OCR
 from src.ocr.extract import extract_text
-from src.ocr.extractors import extract_dosage
-from src.ocr.normalizer import normalize_ocr_errors
 
-from src.decision.candidate_generator import get_best_drug_candidates
-from src.decision.decision_engine import verify
+# Decision
+from src.decision.decision_engine import make_decision
 
-
-# -----------------------------
-# CONFIG
-# -----------------------------
-
-NORMAL_IMAGE_PATH = "data/raw/normal/sample.png"
-UV_IMAGE_PATH = "data/raw/uv/sample.png"
-DB_PATH = "database/drug_db.json"
-
-KNOWN_DRUGS = ["paracetamol", "crocin", "dolo", "paracip"]
+# QR
+from src.qrcode.detector import QRDetector
+from src.qrcode.decoder import QRDecoder
 
 
-# -----------------------------
-# DATABASE LOADER
-# -----------------------------
-
-def load_database(path):
+def load_image(path):
     if not os.path.exists(path):
-        print("Database not found!")
-        return {}
-
-    with open(path, "r") as f:
-        return json.load(f)
+        return None
+    return cv2.imread(path)
 
 
-# -----------------------------
-# UV MODULE
-# -----------------------------
+def process_image(normal_img):
 
-def detect_uv_features(uv_image):
-    gray = cv2.cvtColor(uv_image, cv2.COLOR_BGR2GRAY)
+    # -------- OCR --------
+    raw_text = extract_text(normal_img)
 
-    _, thresh = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)
+    # -------- QR --------
+    qr_detector = QRDetector()
+    qr_decoder = QRDecoder()
 
-    contours, _ = cv2.findContours(
-        thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+    qr_detection = qr_detector.detect(normal_img)
+
+    qr_result = {
+        "found": False,
+        "data": None
+    }
+
+    if qr_detection["found"]:
+        qr_decode = qr_decoder.decode(qr_detection["cropped"])
+
+        if qr_decode["success"]:
+            qr_result = {
+                "found": True,
+                "data": qr_decode["data"]
+            }
+
+    # -------- DECISION --------
+    decision = make_decision(
+        text=raw_text,
+        qr_result=qr_result
     )
 
     return {
-        "uv_present": len(contours) > 0,
-        "uv_region_count": len(contours)
+        "text": raw_text,
+        "qr": qr_result,
+        "decision": decision
     }
 
-
-# -----------------------------
-# DOSAGE VALIDATION (NEW)
-# -----------------------------
-
-def validate_dosage(dosage):
-    valid_dosages = [125, 250, 500, 650, 1000]
-
-    if dosage is None:
-        return {"status": "missing", "valid": False}
-
-    if dosage in valid_dosages:
-        return {"status": "valid", "valid": True}
-
-    return {
-        "status": "suspicious",
-        "valid": False,
-        "reason": f"Unusual dosage: {dosage}"
-    }
-
-
-# -----------------------------
-# MAIN PIPELINE
-# -----------------------------
 
 def main():
+    normal_path = "data/raw/normal/sample.jpg"  # adjust if needed
 
-    print("Normal exists:", os.path.exists(NORMAL_IMAGE_PATH))
-    print("UV exists:", os.path.exists(UV_IMAGE_PATH))
-
-    normal_img = cv2.imread(NORMAL_IMAGE_PATH)
-    uv_img = cv2.imread(UV_IMAGE_PATH)
+    normal_img = load_image(normal_path)
 
     if normal_img is None:
-        print("Error loading normal image")
+        print("Image not found")
         return
 
-    if uv_img is None:
-        print("Error loading UV image")
-        return
+    result = process_image(normal_img)
 
-    # -----------------------------
-    # STEP 1 — OCR
-    # -----------------------------
-    raw_text, cleaned_text = extract_text(NORMAL_IMAGE_PATH, debug=True)
+    print("\n====== OCR TEXT ======")
+    print(result["text"])
 
-    print("\n--- CLEANED TEXT ---\n")
-    print(cleaned_text)
+    print("\n====== QR RESULT ======")
+    print(result["qr"])
 
-    # -----------------------------
-    # STEP 2 — NORMALIZATION
-    # -----------------------------
-    normalized_text = normalize_ocr_errors(cleaned_text)
+    print("\n====== FINAL DECISION ======")
+    print(result["decision"])
 
-    print("\n--- NORMALIZED TEXT ---\n")
-    print(normalized_text)
-
-    # -----------------------------
-    # STEP 3 — CANDIDATES
-    # -----------------------------
-    candidates = get_best_drug_candidates(normalized_text, KNOWN_DRUGS, k=3)
-
-    print("\n--- DRUG CANDIDATES ---")
-    for c in candidates:
-        print(c)
-
-    # -----------------------------
-    # STEP 4 — DOSAGE EXTRACTION
-    # -----------------------------
-    dosage = extract_dosage(normalized_text)
-
-    print("\n--- EXTRACTED DOSAGE ---")
-    print(dosage)
-
-    # -----------------------------
-    # STEP 5 — DOSAGE VALIDATION
-    # -----------------------------
-    dosage_validation = validate_dosage(dosage)
-
-    print("\n--- DOSAGE VALIDATION ---\n")
-    print(dosage_validation)
-
-    # -----------------------------
-    # STEP 6 — UV FEATURES
-    # -----------------------------
-    uv_features = detect_uv_features(uv_img)
-
-    print("\n--- UV FEATURES ---\n")
-    print(uv_features)
-
-    # -----------------------------
-    # STEP 7 — DATABASE
-    # -----------------------------
-    database = load_database(DB_PATH)
-
-    # -----------------------------
-    # STEP 8 — DECISION
-    # -----------------------------
-    result = verify(
-        candidates=candidates,
-        extracted_data={"dosage": dosage, "dosage_validation": dosage_validation},
-        uv_features=uv_features,
-        database=database,
-        text=normalized_text
-    )
-
-    print("\n--- FINAL RESULT ---\n")
-    print(result)
-
-
-# -----------------------------
-# ENTRY
-# -----------------------------
 
 if __name__ == "__main__":
     main()
