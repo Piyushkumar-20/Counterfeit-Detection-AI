@@ -42,3 +42,18 @@ def verify(candidates, extracted_data, uv_features, database, text):
         return f"LIKELY GENUINE ({best})"
     else:
         return f"SUSPICIOUS / FAKE ({best})"
+
+def validate_dosage(dosage):
+    valid_dosages = [125, 250, 500, 650, 1000]
+
+    if dosage is None:
+        return {"status": "missing", "valid": False}
+
+    if dosage in valid_dosages:
+        return {"status": "valid", "valid": True}
+
+    return {
+        "status": "suspicious",
+        "valid": False,
+        "reason": f"Unusual dosage: {dosage}"
+    }

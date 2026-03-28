@@ -4,6 +4,8 @@ import json
 
 from src.ocr.extract import extract_text
 from src.ocr.extractors import extract_dosage
+from src.ocr.normalizer import normalize_ocr_errors
+
 from src.decision.candidate_generator import get_best_drug_candidates
 from src.decision.decision_engine import verify
 
@@ -33,7 +35,7 @@ def load_database(path):
 
 
 # -----------------------------
-# UV MODULE (reuse yours)
+# UV MODULE
 # -----------------------------
 
 def detect_uv_features(uv_image):
@@ -48,6 +50,26 @@ def detect_uv_features(uv_image):
     return {
         "uv_present": len(contours) > 0,
         "uv_region_count": len(contours)
+    }
+
+
+# -----------------------------
+# DOSAGE VALIDATION (NEW)
+# -----------------------------
+
+def validate_dosage(dosage):
+    valid_dosages = [125, 250, 500, 650, 1000]
+
+    if dosage is None:
+        return {"status": "missing", "valid": False}
+
+    if dosage in valid_dosages:
+        return {"status": "valid", "valid": True}
+
+    return {
+        "status": "suspicious",
+        "valid": False,
+        "reason": f"Unusual dosage: {dosage}"
     }
 
 
@@ -80,35 +102,40 @@ def main():
     print(cleaned_text)
 
     # -----------------------------
-    # STEP 2 — FIELD EXTRACTION
+    # STEP 2 — NORMALIZATION
     # -----------------------------
-    extracted_data = {}
+    normalized_text = normalize_ocr_errors(cleaned_text)
 
-    # batch + expiry (reuse your logic if needed)
-    from src.ocr.extract import clean_text as _  # just to avoid conflict
-
-    print("\n--- EXTRACTED DATA ---\n")
-    print(extracted_data)
+    print("\n--- NORMALIZED TEXT ---\n")
+    print(normalized_text)
 
     # -----------------------------
     # STEP 3 — CANDIDATES
     # -----------------------------
-    candidates = get_best_drug_candidates(cleaned_text, KNOWN_DRUGS, k=3)
+    candidates = get_best_drug_candidates(normalized_text, KNOWN_DRUGS, k=3)
 
     print("\n--- DRUG CANDIDATES ---")
     for c in candidates:
         print(c)
 
     # -----------------------------
-    # STEP 4 — DOSAGE
+    # STEP 4 — DOSAGE EXTRACTION
     # -----------------------------
-    dosage = extract_dosage(cleaned_text)
+    dosage = extract_dosage(normalized_text)
 
     print("\n--- EXTRACTED DOSAGE ---")
     print(dosage)
 
     # -----------------------------
-    # STEP 5 — UV FEATURES
+    # STEP 5 — DOSAGE VALIDATION
+    # -----------------------------
+    dosage_validation = validate_dosage(dosage)
+
+    print("\n--- DOSAGE VALIDATION ---\n")
+    print(dosage_validation)
+
+    # -----------------------------
+    # STEP 6 — UV FEATURES
     # -----------------------------
     uv_features = detect_uv_features(uv_img)
 
@@ -116,19 +143,19 @@ def main():
     print(uv_features)
 
     # -----------------------------
-    # STEP 6 — DATABASE
+    # STEP 7 — DATABASE
     # -----------------------------
     database = load_database(DB_PATH)
 
     # -----------------------------
-    # STEP 7 — DECISION
+    # STEP 8 — DECISION
     # -----------------------------
     result = verify(
         candidates=candidates,
-        extracted_data=extracted_data,
+        extracted_data={"dosage": dosage, "dosage_validation": dosage_validation},
         uv_features=uv_features,
         database=database,
-        text=cleaned_text
+        text=normalized_text
     )
 
     print("\n--- FINAL RESULT ---\n")
