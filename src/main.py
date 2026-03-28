@@ -1,126 +1,26 @@
 import cv2
-import pytesseract
-import numpy as np
-import re
-import json
 import os
-from difflib import get_close_matches
+import json
+
+from src.ocr.extract import extract_text
+from src.ocr.extractors import extract_dosage
+from src.decision.candidate_generator import get_best_drug_candidates
+from src.decision.decision_engine import verify
+
 
 # -----------------------------
 # CONFIG
 # -----------------------------
 
-KNOWN_DRUGS = ["paracetamol", "crocin", "dolo", "paracip"]
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-
 NORMAL_IMAGE_PATH = "data/raw/normal/sample.png"
 UV_IMAGE_PATH = "data/raw/uv/sample.png"
-DB_PATH = "../database/drug_db.json"
+DB_PATH = "database/drug_db.json"
 
-print("Normal exists:", os.path.exists(NORMAL_IMAGE_PATH))
-print("UV exists:", os.path.exists(UV_IMAGE_PATH))
-
-
-# -----------------------------
-# OCR MODULE (CORRECTED)
-# -----------------------------
-
-def crop_text_region(image):
-    h, w = image.shape[:2]
-    return image[int(h*0.4):int(h*0.9), int(w*0.1):int(w*0.9)]
-
-
-def preprocess_image(image, debug=False):
-    # Resize (important)
-    image = cv2.resize(image, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
-
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
-    # Strong blur to remove foil noise
-    blur = cv2.GaussianBlur(gray, (7, 7), 0)
-
-    # Otsu threshold (best here)
-    _, thresh = cv2.threshold(
-        blur,
-        0,
-        255,
-        cv2.THRESH_BINARY + cv2.THRESH_OTSU
-    )
-
-    # Invert → text becomes white
-    thresh = cv2.bitwise_not(thresh)
-
-    if debug:
-        cv2.imwrite("debug_final.png", thresh)
-
-    return thresh
-
-
-def extract_text(image):
-    # Crop → reduce noise
-    image = crop_text_region(image)
-
-    # Preprocess
-    processed = preprocess_image(image, debug=True)
-
-    # OCR config (correct for structured text)
-    config = r'--oem 3 --psm 6'
-    text = pytesseract.image_to_string(processed, config=config)
-
-    return text
-
-
-def clean_text(text):
-    text = text.lower()
-    text = re.sub(r'[^a-z0-9\s]', ' ', text)
-    text = re.sub(r'\s+', ' ', text)
-    return text.strip()
-
-
-def extract_fields(text):
-    data = {}
-
-    # Batch
-    batch = re.search(r'batch\s*no[:\-]?\s*(\w+)', text)
-    if batch:
-        data['batch_no'] = batch.group(1)
-
-    # Expiry
-    exp = re.search(r'(exp|expiry)[:\-]?\s*(\d{2}/\d{4})', text)
-    if exp:
-        data['expiry'] = exp.group(2)
-
-    # Drug name (FIXED)
-    words = re.findall(r'[a-z]{4,}', text)
-
-    for word in words:
-        match = get_close_matches(word, KNOWN_DRUGS, n=1, cutoff=0.6)
-        if match:
-            data['drug_name'] = match[0]
-            break
-
-    return data
+KNOWN_DRUGS = ["paracetamol", "crocin", "dolo", "paracip"]
 
 
 # -----------------------------
-# UV MODULE (unchanged)
-# -----------------------------
-
-def detect_uv_features(uv_image):
-    gray = cv2.cvtColor(uv_image, cv2.COLOR_BGR2GRAY)
-
-    _, thresh = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)
-
-    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-    return {
-        "uv_present": len(contours) > 0,
-        "uv_region_count": len(contours)
-    }
-
-
-# -----------------------------
-# DATABASE MODULE
+# DATABASE LOADER
 # -----------------------------
 
 def load_database(path):
@@ -133,39 +33,32 @@ def load_database(path):
 
 
 # -----------------------------
-# DECISION ENGINE
+# UV MODULE (reuse yours)
 # -----------------------------
 
-def verify(drug_name, extracted_data, uv_features, database):
+def detect_uv_features(uv_image):
+    gray = cv2.cvtColor(uv_image, cv2.COLOR_BGR2GRAY)
 
-    if not drug_name:
-        return "UNKNOWN DRUG"
+    _, thresh = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)
 
-    drug_name = drug_name.strip()
+    contours, _ = cv2.findContours(
+        thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+    )
 
-    db_entry = database.get(drug_name)
-
-    if not db_entry:
-        return "NOT IN DATABASE"
-
-    if db_entry.get("uv_required", False):
-        if not uv_features["uv_present"]:
-            return "FAKE: UV missing"
-
-    if "batch_no" not in extracted_data:
-        return "SUSPICIOUS: Batch missing"
-
-    if "expiry" not in extracted_data:
-        return "SUSPICIOUS: Expiry missing"
-
-    return "LIKELY GENUINE"
+    return {
+        "uv_present": len(contours) > 0,
+        "uv_region_count": len(contours)
+    }
 
 
 # -----------------------------
-# MAIN
+# MAIN PIPELINE
 # -----------------------------
 
 def main():
+
+    print("Normal exists:", os.path.exists(NORMAL_IMAGE_PATH))
+    print("UV exists:", os.path.exists(UV_IMAGE_PATH))
 
     normal_img = cv2.imread(NORMAL_IMAGE_PATH)
     uv_img = cv2.imread(UV_IMAGE_PATH)
@@ -178,37 +71,73 @@ def main():
         print("Error loading UV image")
         return
 
-    # OCR
-    raw_text = extract_text(normal_img)
-
-    print("\n--- RAW OCR TEXT ---\n")
-    print(raw_text)
-
-    cleaned = clean_text(raw_text)
+    # -----------------------------
+    # STEP 1 — OCR
+    # -----------------------------
+    raw_text, cleaned_text = extract_text(NORMAL_IMAGE_PATH, debug=True)
 
     print("\n--- CLEANED TEXT ---\n")
-    print(cleaned)
+    print(cleaned_text)
 
-    extracted_data = extract_fields(cleaned)
+    # -----------------------------
+    # STEP 2 — FIELD EXTRACTION
+    # -----------------------------
+    extracted_data = {}
+
+    # batch + expiry (reuse your logic if needed)
+    from src.ocr.extract import clean_text as _  # just to avoid conflict
 
     print("\n--- EXTRACTED DATA ---\n")
     print(extracted_data)
 
-    # UV
+    # -----------------------------
+    # STEP 3 — CANDIDATES
+    # -----------------------------
+    candidates = get_best_drug_candidates(cleaned_text, KNOWN_DRUGS, k=3)
+
+    print("\n--- DRUG CANDIDATES ---")
+    for c in candidates:
+        print(c)
+
+    # -----------------------------
+    # STEP 4 — DOSAGE
+    # -----------------------------
+    dosage = extract_dosage(cleaned_text)
+
+    print("\n--- EXTRACTED DOSAGE ---")
+    print(dosage)
+
+    # -----------------------------
+    # STEP 5 — UV FEATURES
+    # -----------------------------
     uv_features = detect_uv_features(uv_img)
 
     print("\n--- UV FEATURES ---\n")
     print(uv_features)
 
-    # DB
+    # -----------------------------
+    # STEP 6 — DATABASE
+    # -----------------------------
     database = load_database(DB_PATH)
 
-    drug_name = extracted_data.get("drug_name", "")
-    result = verify(drug_name, extracted_data, uv_features, database)
+    # -----------------------------
+    # STEP 7 — DECISION
+    # -----------------------------
+    result = verify(
+        candidates=candidates,
+        extracted_data=extracted_data,
+        uv_features=uv_features,
+        database=database,
+        text=cleaned_text
+    )
 
     print("\n--- FINAL RESULT ---\n")
     print(result)
 
+
+# -----------------------------
+# ENTRY
+# -----------------------------
 
 if __name__ == "__main__":
     main()
