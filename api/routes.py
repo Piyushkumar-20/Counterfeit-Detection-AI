@@ -47,6 +47,8 @@ async def verify_package(
 			"dosage": decision.get("dosage"),
 			"qr_status": result["qr"],
 			"uv_score": result["uv"].get("similarity", 0.0),
+			"image_dataset_match": result.get("image_dataset_match"),
+			"regulatory_sources": result.get("regulatory_sources"),
 			"final_decision": decision.get("final_decision"),
 			"confidence": decision.get("confidence"),
 			"probability_authentic": decision.get("probability_authentic"),

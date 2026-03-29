@@ -32,6 +32,7 @@ def compose_feature_vector(
     dosage_match_score: float,
     qr_validity_score: float,
     uv_similarity_score: float,
+    image_match_score: float = 0.5,
 ) -> Dict[str, float]:
     return {
         "ocr_confidence": min(max(float(ocr_confidence), 0.0), 1.0),
@@ -39,4 +40,5 @@ def compose_feature_vector(
         "dosage_match_score": min(max(float(dosage_match_score), 0.0), 1.0),
         "qr_validity_score": min(max(float(qr_validity_score), 0.0), 1.0),
         "uv_similarity_score": min(max(float(uv_similarity_score), 0.0), 1.0),
+        "image_match_score": min(max(float(image_match_score), 0.0), 1.0),
     }

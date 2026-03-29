@@ -34,6 +34,8 @@ def _build_reasoning(features: Dict[str, float], probability: float, candidate_n
         notes.append("QR data is missing or does not follow expected structure")
     if features["uv_similarity_score"] < 0.5:
         notes.append("UV security pattern similarity is low")
+    if features.get("image_match_score", 0.5) < 0.5:
+        notes.append("Packaging image similarity to legal dataset is low")
 
     if not notes:
         notes.append("All major checks are consistent with authentic packaging")
@@ -50,6 +52,8 @@ def verify(
     ocr_confidence: float,
     qr_result: Dict,
     uv_result: Dict,
+    image_match_score: float = 0.5,
+    regulatory_sources_result: Dict = None,
     classifier: HybridAuthenticityClassifier = None,
 ) -> Dict:
     if classifier is None:
@@ -97,6 +101,7 @@ def verify(
         dosage_match_score=dosage_score(extracted_dosage, expected_dosage),
         qr_validity_score=qr_score(qr_result),
         uv_similarity_score=uv_score(uv_result, uv_required=uv_required),
+        image_match_score=image_match_score,
     )
 
     probability = classifier.predict_proba(features)
@@ -124,4 +129,5 @@ def verify(
         "feature_breakdown": features,
         "dosage_validation": dosage_validation,
         "regulatory_assessment": regulatory,
+        "regulatory_sources": regulatory_sources_result or {"checked": False, "valid": None, "sources": []},
     }

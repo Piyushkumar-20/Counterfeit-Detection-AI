@@ -1,0 +1,9 @@
+# Python bytecode and cache
+__pycache__/
+*.py[cod]
+
+# Test and tooling cache
+.pytest_cache/
+
+# Local debug artifacts
+debug*.png

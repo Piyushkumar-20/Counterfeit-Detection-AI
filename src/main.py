@@ -4,9 +4,12 @@ import argparse
 from typing import Dict, Optional
 
 import cv2
+import numpy as np
 
 from src.decision.candidate_generator import get_best_drug_candidates
 from src.decision.decision_engine import verify
+from src.decision.image_matcher import match_against_references
+from src.decision.regulatory_sources import verify_with_regulatory_sources
 from src.ocr.extract import extract_text
 from src.qrcode.decoder import QRDecoder
 from src.qrcode.detector import QRDetector
@@ -99,6 +102,19 @@ def process_image(normal_image_path: str, uv_image_path: Optional[str] = None, d
     uv_references = _parse_uv_reference_images(top_entry)
     uv_result = uv_detector.analyze(uv_img, reference_images=uv_references)
 
+    # Dataset image matching (known legal package references)
+    image_match_result = match_against_references(
+        query_image=normal_img,
+        reference_paths=top_entry.get("reference_images", []),
+    )
+
+    # Regulatory source verification (optional online APIs)
+    regulatory_sources_result = verify_with_regulatory_sources(
+        drug_name=candidates[0]["name"] if candidates else None,
+        dosage=top_entry.get("dosage") if top_entry else None,
+        qr_data=qr_result.get("data"),
+    )
+
     # Final decision
     decision = verify(
         candidates=candidates,
@@ -107,6 +123,8 @@ def process_image(normal_image_path: str, uv_image_path: Optional[str] = None, d
         ocr_confidence=ocr_result["confidence"],
         qr_result=qr_result,
         uv_result=uv_result,
+        image_match_score=image_match_result.get("score", 0.5),
+        regulatory_sources_result=regulatory_sources_result,
     )
 
     return {
@@ -114,8 +132,30 @@ def process_image(normal_image_path: str, uv_image_path: Optional[str] = None, d
         "candidates": candidates,
         "qr": qr_result,
         "uv": uv_result,
+        "image_dataset_match": image_match_result,
+        "regulatory_sources": regulatory_sources_result,
         "decision": decision,
     }
+
+
+def process_captured_images(normal_image: np.ndarray, uv_image: Optional[np.ndarray] = None, debug: bool = False) -> Dict:
+    """
+    Hardware-friendly entry point: pass captured normal and UV frames directly.
+    """
+    if normal_image is None:
+        raise ValueError("normal_image cannot be None")
+
+    temp_normal = "data/processed/_runtime_normal.png"
+    temp_uv = "data/processed/_runtime_uv.png"
+
+    os.makedirs("data/processed", exist_ok=True)
+    cv2.imwrite(temp_normal, normal_image)
+    uv_path = None
+    if uv_image is not None:
+        cv2.imwrite(temp_uv, uv_image)
+        uv_path = temp_uv
+
+    return process_image(normal_image_path=temp_normal, uv_image_path=uv_path, debug=debug)
 
 
 def main():

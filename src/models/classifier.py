@@ -17,6 +17,7 @@ class HybridAuthenticityClassifier:
 			"dosage_match_score": 1.0,
 			"qr_validity_score": 1.2,
 			"uv_similarity_score": 1.4,
+			"image_match_score": 1.2,
 		}
 	)
 	bias: float = -2.0
