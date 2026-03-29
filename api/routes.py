@@ -52,6 +52,7 @@ async def verify_package(
 			"probability_authentic": decision.get("probability_authentic"),
 			"reasoning": decision.get("reasoning"),
 			"feature_breakdown": decision.get("feature_breakdown"),
+			"regulatory_assessment": decision.get("regulatory_assessment"),
 		}
 	except ValueError as exc:
 		raise HTTPException(status_code=400, detail=str(exc)) from exc

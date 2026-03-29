@@ -24,6 +24,8 @@ def test_decision_engine_returns_probabilistic_output():
 	assert result["final_decision"] in {"authentic", "counterfeit"}
 	assert 0.0 <= result["probability_authentic"] <= 1.0
 	assert isinstance(result["reasoning"], list)
+	assert "regulatory_assessment" in result
+	assert "category" in result["regulatory_assessment"]
 
 
 def test_api_health_endpoint():

@@ -1,5 +1,6 @@
 import json
 import os
+import argparse
 from typing import Dict, Optional
 
 import cv2
@@ -118,12 +119,33 @@ def process_image(normal_image_path: str, uv_image_path: Optional[str] = None, d
 
 
 def main():
-    sample_path = "data/raw/normal/sample.jpg"
-    if not os.path.exists(sample_path):
-        print("Sample image not found; pass your own path through process_image().")
+    parser = argparse.ArgumentParser(description="Pharmacy AI image verifier")
+    parser.add_argument("--normal", dest="normal_path", default=None, help="Path to normal-light package image")
+    parser.add_argument("--uv", dest="uv_path", default=None, help="Optional path to UV image")
+    parser.add_argument("--debug", action="store_true", help="Enable OCR debug logging")
+    args = parser.parse_args()
+
+    normal_candidates = [
+        args.normal_path,
+        "data/raw/normal/sample.png",
+        "data/raw/normal/sample.jpg",
+        "data/raw/normal/sample.jpeg",
+    ]
+    sample_path = next((path for path in normal_candidates if path and os.path.exists(path)), None)
+
+    if sample_path is None:
+        print("No normal image found. Use --normal <path> or place an image in data/raw/normal/.")
         return
 
-    result = process_image(sample_path)
+    uv_candidates = [
+        args.uv_path,
+        "data/raw/uv/sample.png",
+        "data/raw/uv/sample.jpg",
+        "data/raw/uv/sample.jpeg",
+    ]
+    uv_path = next((path for path in uv_candidates if path and os.path.exists(path)), None)
+
+    result = process_image(sample_path, uv_image_path=uv_path, debug=args.debug)
 
     print("\n====== FINAL RESULT ======")
     print(json.dumps(result["decision"], indent=2))

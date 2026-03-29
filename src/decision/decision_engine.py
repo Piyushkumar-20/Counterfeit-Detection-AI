@@ -1,6 +1,7 @@
 from typing import Dict, List
 
 from src.decision.scorer import compose_feature_vector, dosage_score, qr_score, uv_score
+from src.decision.regulatory import classify_regulatory_risk
 from src.models.classifier import HybridAuthenticityClassifier
 from src.ocr.extractors import extract_dosage
 
@@ -55,6 +56,21 @@ def verify(
         classifier = HybridAuthenticityClassifier()
 
     if not candidates:
+        fallback_features = {
+            "ocr_confidence": float(ocr_confidence),
+            "drug_match_score": 0.0,
+            "dosage_match_score": 0.0,
+            "qr_validity_score": float(qr_result.get("format_score", 0.0)),
+            "uv_similarity_score": float(uv_result.get("similarity", 0.0)),
+        }
+        dosage_validation = validate_dosage(extract_dosage(text))
+        regulatory = classify_regulatory_risk(
+            feature_breakdown=fallback_features,
+            dosage_validation=dosage_validation,
+            qr_result=qr_result,
+            uv_result=uv_result,
+            has_candidate=False,
+        )
         return {
             "drug_name": None,
             "dosage": extract_dosage(text),
@@ -62,7 +78,9 @@ def verify(
             "confidence": 0.15,
             "probability_authentic": 0.15,
             "reasoning": ["No plausible drug candidate matched OCR output"],
-            "feature_breakdown": {},
+            "feature_breakdown": fallback_features,
+            "dosage_validation": dosage_validation,
+            "regulatory_assessment": regulatory,
         }
 
     top = candidates[0]
@@ -87,6 +105,14 @@ def verify(
 
     final_decision = "authentic" if probability >= 0.6 else "counterfeit"
     reasoning = _build_reasoning(features, probability, drug_name)
+    dosage_validation = validate_dosage(extracted_dosage)
+    regulatory = classify_regulatory_risk(
+        feature_breakdown=features,
+        dosage_validation=dosage_validation,
+        qr_result=qr_result,
+        uv_result=uv_result,
+        has_candidate=True,
+    )
 
     return {
         "drug_name": drug_name,
@@ -96,5 +122,6 @@ def verify(
         "probability_authentic": round(probability, 4),
         "reasoning": reasoning,
         "feature_breakdown": features,
-        "dosage_validation": validate_dosage(extracted_dosage),
+        "dosage_validation": dosage_validation,
+        "regulatory_assessment": regulatory,
     }
