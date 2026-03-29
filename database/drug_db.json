@@ -1,14 +1,81 @@
 {
     "paracetamol": {
-    "uv_required": true
+        "brand": "Paracetamol",
+        "dosage": 500,
+        "manufacturer": "Generic",
+        "expected_text_patterns": [
+            "paracetamol",
+            "500 mg"
+        ],
+        "aliases": [
+            "paracetmol",
+            "paraceta mol",
+            "paracitamol"
+        ],
+        "known_ocr_distortions": [
+            "5oo mg",
+            "soo mg"
+        ],
+        "qr_format": "(PARA|PARACETAMOL|GTIN|BATCH)",
+        "uv_required": true,
+        "uv_signature": []
     },
     "crocin": {
-    "uv_required": true
+        "brand": "Crocin",
+        "dosage": 500,
+        "manufacturer": "GSK",
+        "expected_text_patterns": [
+            "crocin",
+            "500 mg"
+        ],
+        "aliases": [
+            "crocin advance",
+            "crocin 500"
+        ],
+        "known_ocr_distortions": [
+            "cr0cin",
+            "crocm"
+        ],
+        "qr_format": "(CROCIN|GTIN|BATCH)",
+        "uv_required": true,
+        "uv_signature": []
     },
     "dolo": {
-    "uv_required": true
+        "brand": "Dolo",
+        "dosage": 650,
+        "manufacturer": "Micro Labs",
+        "expected_text_patterns": [
+            "dolo 650",
+            "650 mg"
+        ],
+        "aliases": [
+            "dolo650",
+            "dolo-650"
+        ],
+        "known_ocr_distortions": [
+            "do1o",
+            "d0lo"
+        ],
+        "qr_format": "(DOLO|650|GTIN|BATCH)",
+        "uv_required": true,
+        "uv_signature": []
     },
     "paracip": {
-    "uv_required": true
+        "brand": "Paracip",
+        "dosage": 500,
+        "manufacturer": "Cipla",
+        "expected_text_patterns": [
+            "paracip",
+            "500 mg"
+        ],
+        "aliases": [
+            "paracip 500"
+        ],
+        "known_ocr_distortions": [
+            "parac1p"
+        ],
+        "qr_format": "(PARACIP|CIPLA|GTIN|BATCH)",
+        "uv_required": true,
+        "uv_signature": []
     }
 }

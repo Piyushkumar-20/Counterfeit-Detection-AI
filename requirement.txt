@@ -1,0 +1,11 @@
+opencv-python
+numpy
+pytesseract
+rapidfuzz
+fastapi
+uvicorn
+python-multipart
+pytest
+httpx
+easyocr
+pyzbar

@@ -1,80 +1,132 @@
-import cv2
+import json
 import os
+from typing import Dict, Optional
 
-# OCR
+import cv2
+
+from src.decision.candidate_generator import get_best_drug_candidates
+from src.decision.decision_engine import verify
 from src.ocr.extract import extract_text
-
-# Decision
-from src.decision.decision_engine import make_decision
-
-# QR
-from src.qrcode.detector import QRDetector
 from src.qrcode.decoder import QRDecoder
+from src.qrcode.detector import QRDetector
+from src.uv.uv_detector import UVDetector
 
 
-def load_image(path):
+def _load_image(path: Optional[str]):
+    if not path:
+        return None
     if not os.path.exists(path):
         return None
     return cv2.imread(path)
 
 
-def process_image(normal_img):
+def load_database(path: str = "database/drug_db.json") -> Dict:
+    with open(path, "r", encoding="utf-8") as file:
+        return json.load(file)
 
-    # -------- OCR --------
-    raw_text = extract_text(normal_img)
 
-    # -------- QR --------
+def _parse_uv_reference_images(entry: Dict):
+    refs = []
+    for rel_path in entry.get("uv_signature", []):
+        image = _load_image(rel_path)
+        if image is not None:
+            refs.append(image)
+    return refs
+
+
+def process_image(normal_image_path: str, uv_image_path: Optional[str] = None, debug: bool = False) -> Dict:
+    database = load_database()
+
+    normal_img = _load_image(normal_image_path)
+    if normal_img is None:
+        raise ValueError(f"Normal image not found: {normal_image_path}")
+
+    uv_img = _load_image(uv_image_path)
+
+    # OCR pipeline
+    ocr_result = extract_text(normal_img, debug=debug)
+
+    # Candidate generation
+    candidates = get_best_drug_candidates(
+        text=ocr_result["normalized_text"],
+        database=database,
+        k=5,
+    )
+    top_entry = database.get(candidates[0]["name"], {}) if candidates else {}
+
+    # QR pipeline
     qr_detector = QRDetector()
     qr_decoder = QRDecoder()
-
-    qr_detection = qr_detector.detect(normal_img)
+    detection = qr_detector.detect(normal_img)
 
     qr_result = {
         "found": False,
-        "data": None
+        "decoded": False,
+        "data": None,
+        "format_score": 0.0,
+        "reason": "QR not detected",
     }
 
-    if qr_detection["found"]:
-        qr_decode = qr_decoder.decode(qr_detection["cropped"])
-
-        if qr_decode["success"]:
+    if detection["found"] and detection["cropped"] is not None:
+        decoded = qr_decoder.decode(detection["cropped"])
+        if decoded["success"]:
+            qr_validation = qr_decoder.validate(
+                decoded["data"],
+                expected_pattern=top_entry.get("qr_format"),
+            )
             qr_result = {
                 "found": True,
-                "data": qr_decode["data"]
+                "decoded": True,
+                "data": decoded["data"],
+                "method": decoded.get("method"),
+                "format_score": qr_validation["format_score"],
+                "is_structured": qr_validation["is_structured"],
+                "signature_valid": qr_validation["signature_valid"],
+                "reason": qr_validation["reason"],
+            }
+        else:
+            qr_result = {
+                "found": True,
+                "decoded": False,
+                "data": None,
+                "format_score": 0.1,
+                "reason": "QR detected but not decodable",
             }
 
-    # -------- DECISION --------
-    decision = make_decision(
-        text=raw_text,
-        qr_result=qr_result
+    # UV pipeline
+    uv_detector = UVDetector()
+    uv_references = _parse_uv_reference_images(top_entry)
+    uv_result = uv_detector.analyze(uv_img, reference_images=uv_references)
+
+    # Final decision
+    decision = verify(
+        candidates=candidates,
+        database=database,
+        text=ocr_result["normalized_text"],
+        ocr_confidence=ocr_result["confidence"],
+        qr_result=qr_result,
+        uv_result=uv_result,
     )
 
     return {
-        "text": raw_text,
+        "ocr": ocr_result,
+        "candidates": candidates,
         "qr": qr_result,
-        "decision": decision
+        "uv": uv_result,
+        "decision": decision,
     }
 
 
 def main():
-    normal_path = "data/raw/normal/sample.jpg"  # adjust if needed
-
-    normal_img = load_image(normal_path)
-
-    if normal_img is None:
-        print("Image not found")
+    sample_path = "data/raw/normal/sample.jpg"
+    if not os.path.exists(sample_path):
+        print("Sample image not found; pass your own path through process_image().")
         return
 
-    result = process_image(normal_img)
+    result = process_image(sample_path)
 
-    print("\n====== OCR TEXT ======")
-    print(result["text"])
-
-    print("\n====== QR RESULT ======")
-    print(result["qr"])
-
-    print("\n====== FINAL DECISION ======")
-    print(result["decision"])
+    print("\n====== FINAL RESULT ======")
+    print(json.dumps(result["decision"], indent=2))
 
 
 if __name__ == "__main__":
