@@ -24,7 +24,9 @@ def _load_image(path: Optional[str]):
     return cv2.imread(path)
 
 
-def load_database(path: str = "database/drug_db.json") -> Dict:
+def load_database(path: str = "database/drug_db_runtime.json") -> Dict:
+    if not os.path.exists(path):
+        path = "database/drug_db.json"
     with open(path, "r", encoding="utf-8") as file:
         return json.load(file)
 

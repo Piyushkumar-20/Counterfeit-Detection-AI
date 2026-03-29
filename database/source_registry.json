@@ -1,0 +1,26 @@
+{
+  "openfda_label": {
+    "enabled": true,
+    "type": "api",
+    "url": "https://api.fda.gov/drug/label.json",
+    "confidence": 0.92,
+    "retry_count": 2,
+    "retry_backoff_sec": 1
+  },
+  "openfda_enforcement": {
+    "enabled": true,
+    "type": "api",
+    "url": "https://api.fda.gov/drug/enforcement.json",
+    "confidence": 0.92,
+    "retry_count": 2,
+    "retry_backoff_sec": 1
+  },
+  "manual_curated": {
+    "enabled": true,
+    "type": "manual",
+    "url": "database/drug_db.json",
+    "confidence": 0.98,
+    "retry_count": 0,
+    "retry_backoff_sec": 0
+  }
+}

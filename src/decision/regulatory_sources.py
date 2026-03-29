@@ -11,6 +11,48 @@ def _request_json(url: str, timeout: int = 5) -> Dict:
         return json.loads(payload)
 
 
+def _verify_from_local_cache(drug_name: Optional[str], cache_path: str = "database/regulatory_cache.json") -> Optional[Dict]:
+    if not drug_name:
+        return None
+    if not os.path.exists(cache_path):
+        return None
+
+    try:
+        with open(cache_path, "r", encoding="utf-8") as file:
+            cache = json.load(file)
+    except Exception:
+        return None
+
+    key = "".join(ch.lower() if ch.isalnum() else "_" for ch in drug_name).strip("_")
+    row = cache.get(key)
+    if not isinstance(row, dict):
+        return None
+
+    if not row.get("checked", False):
+        return {
+            "checked": False,
+            "valid": None,
+            "sources": [{"url": row.get("source", "local_cache"), "reachable": False, "valid": None, "payload": row}],
+            "reason": row.get("error", "Local regulatory cache source was not reachable"),
+        }
+
+    alerts = row.get("active_alerts", [])
+    if alerts:
+        return {
+            "checked": True,
+            "valid": False,
+            "sources": [{"url": row.get("source", "local_cache"), "reachable": True, "valid": False, "payload": row}],
+            "reason": "Local regulatory cache indicates active alert",
+        }
+
+    return {
+        "checked": True,
+        "valid": True,
+        "sources": [{"url": row.get("source", "local_cache"), "reachable": True, "valid": True, "payload": row}],
+        "reason": "Verified against local regulatory cache",
+    }
+
+
 def verify_with_regulatory_sources(drug_name: Optional[str], dosage: Optional[int], qr_data: Optional[str]) -> Dict:
     """
     Best-effort verification against configured regulatory endpoints.
@@ -22,6 +64,9 @@ def verify_with_regulatory_sources(drug_name: Optional[str], dosage: Optional[in
     endpoints = [value.strip() for value in os.getenv("REGULATORY_ENDPOINTS", "").split(",") if value.strip()]
 
     if not endpoints:
+        local_result = _verify_from_local_cache(drug_name)
+        if local_result is not None:
+            return local_result
         return {
             "checked": False,
             "valid": None,
