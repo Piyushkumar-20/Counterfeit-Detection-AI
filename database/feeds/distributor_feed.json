@@ -1,0 +1,17 @@
+[
+  {
+    "product_id": "890000000001",
+    "gtin": "890000000001",
+    "brand": "Crocin",
+    "manufacturer": "GSK",
+    "country": "IN",
+    "regulator": "CDSCO",
+    "product_status": "active",
+    "aliases": ["Crocin 500"],
+    "expected_text_patterns": ["crocin", "500 mg"],
+    "qr_format": "(CROCIN|GTIN|BATCH|LOT|EXP)",
+    "batch_format": "[A-Z0-9-]{4,20}",
+    "expiry_format": "(MM/YYYY|YYYY-MM)",
+    "manufacturing_date_format": "(MM/YYYY|YYYY-MM)"
+  }
+]

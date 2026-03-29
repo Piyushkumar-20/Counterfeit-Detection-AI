@@ -143,21 +143,34 @@ def process_image(normal_image_path: str, uv_image_path: Optional[str] = None, d
 def process_captured_images(normal_image: np.ndarray, uv_image: Optional[np.ndarray] = None, debug: bool = False) -> Dict:
     """
     Hardware-friendly entry point: pass captured normal and UV frames directly.
+    Uses unique temp files to support parallel capture requests safely.
     """
     if normal_image is None:
         raise ValueError("normal_image cannot be None")
 
-    temp_normal = "data/processed/_runtime_normal.png"
-    temp_uv = "data/processed/_runtime_uv.png"
+    import tempfile
 
     os.makedirs("data/processed", exist_ok=True)
-    cv2.imwrite(temp_normal, normal_image)
-    uv_path = None
-    if uv_image is not None:
-        cv2.imwrite(temp_uv, uv_image)
-        uv_path = temp_uv
+    normal_tmp = tempfile.NamedTemporaryFile(prefix="runtime_normal_", suffix=".png", dir="data/processed", delete=False)
+    uv_tmp = None
+    try:
+        temp_normal = normal_tmp.name
+        cv2.imwrite(temp_normal, normal_image)
+        uv_path = None
+        if uv_image is not None:
+            uv_tmp = tempfile.NamedTemporaryFile(prefix="runtime_uv_", suffix=".png", dir="data/processed", delete=False)
+            uv_path = uv_tmp.name
+            cv2.imwrite(uv_path, uv_image)
 
-    return process_image(normal_image_path=temp_normal, uv_image_path=uv_path, debug=debug)
+        return process_image(normal_image_path=temp_normal, uv_image_path=uv_path, debug=debug)
+    finally:
+        normal_tmp.close()
+        if uv_tmp is not None:
+            uv_tmp.close()
+        if os.path.exists(normal_tmp.name):
+            os.remove(normal_tmp.name)
+        if uv_tmp is not None and os.path.exists(uv_tmp.name):
+            os.remove(uv_tmp.name)
 
 
 def main():

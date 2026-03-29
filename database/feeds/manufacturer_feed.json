@@ -1,0 +1,21 @@
+[
+  {
+    "product_id": "890000000001",
+    "gtin": "890000000001",
+    "brand": "Crocin",
+    "generic_name": "Paracetamol",
+    "dosage": 500,
+    "strength_unit": "mg",
+    "dosage_form": "tablet",
+    "pack_presentation": "strip-10",
+    "manufacturer": "GSK",
+    "manufacturer_license": "IN-MFG-DEMO-001",
+    "aliases": ["Crocin Advance"],
+    "expected_text_patterns": ["crocin", "500 mg", "paracetamol"],
+    "reference_images": [],
+    "uv_signature": [],
+    "layout_anchors": {},
+    "hologram_metadata": {},
+    "packaging_versions": []
+  }
+]

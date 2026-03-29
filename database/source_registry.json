@@ -15,6 +15,30 @@
     "retry_count": 2,
     "retry_backoff_sec": 1
   },
+  "india_cdsco_bulletin": {
+    "enabled": true,
+    "type": "file",
+    "url": "database/feeds/india_regulatory_feed.json",
+    "confidence": 0.9,
+    "retry_count": 0,
+    "retry_backoff_sec": 0
+  },
+  "manufacturer_feed": {
+    "enabled": true,
+    "type": "file",
+    "url": "database/feeds/manufacturer_feed.json",
+    "confidence": 0.95,
+    "retry_count": 0,
+    "retry_backoff_sec": 0
+  },
+  "distributor_feed": {
+    "enabled": true,
+    "type": "file",
+    "url": "database/feeds/distributor_feed.json",
+    "confidence": 0.93,
+    "retry_count": 0,
+    "retry_backoff_sec": 0
+  },
   "manual_curated": {
     "enabled": true,
     "type": "manual",

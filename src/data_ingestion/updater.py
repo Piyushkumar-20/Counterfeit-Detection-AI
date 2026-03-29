@@ -30,6 +30,30 @@ SOURCE_DEFAULTS = {
         "retry_count": 2,
         "retry_backoff_sec": 1,
     },
+    "india_cdsco_bulletin": {
+        "enabled": True,
+        "type": "file",
+        "url": "database/feeds/india_regulatory_feed.json",
+        "confidence": 0.9,
+        "retry_count": 0,
+        "retry_backoff_sec": 0,
+    },
+    "manufacturer_feed": {
+        "enabled": True,
+        "type": "file",
+        "url": "database/feeds/manufacturer_feed.json",
+        "confidence": 0.95,
+        "retry_count": 0,
+        "retry_backoff_sec": 0,
+    },
+    "distributor_feed": {
+        "enabled": True,
+        "type": "file",
+        "url": "database/feeds/distributor_feed.json",
+        "confidence": 0.93,
+        "retry_count": 0,
+        "retry_backoff_sec": 0,
+    },
     "manual_curated": {
         "enabled": True,
         "type": "manual",
@@ -340,6 +364,63 @@ def _prune_snapshots(snapshots: List[Dict], max_items: int = 150) -> List[Dict]:
     return sorted(snapshots, key=lambda row: row.get("timestamp", 0), reverse=True)[:max_items]
 
 
+def _feed_records(path: str) -> List[Dict]:
+    data = _load_json(path, [])
+    if isinstance(data, list):
+        return [row for row in data if isinstance(row, dict)]
+    return []
+
+
+def _normalize_feed_row(raw: Dict, source_id: str, source_cfg: Dict) -> Optional[Tuple[str, Dict, str]]:
+    brand = str(raw.get("brand") or raw.get("drug_name") or "").strip()
+    if not brand:
+        return None
+
+    key = _normalize_key(brand)
+    dosage = raw.get("dosage")
+    if dosage is not None:
+        try:
+            dosage = int(dosage)
+        except Exception:
+            dosage = None
+
+    normalized = {
+        "product_id": str(raw.get("gtin") or raw.get("product_id") or key),
+        "brand": brand,
+        "generic_name": str(raw.get("generic_name") or brand),
+        "dosage": dosage,
+        "strength_unit": str(raw.get("strength_unit") or ("mg" if dosage else "")) or None,
+        "dosage_form": str(raw.get("dosage_form") or "unknown"),
+        "pack_presentation": raw.get("pack_presentation"),
+        "manufacturer": str(raw.get("manufacturer") or "Unknown"),
+        "manufacturer_license": raw.get("manufacturer_license"),
+        "country": str(raw.get("country") or "IN"),
+        "regulator": str(raw.get("regulator") or "CDSCO"),
+        "expected_text_patterns": _compact_unique(list(raw.get("expected_text_patterns", [])) + [brand], limit=15),
+        "aliases": _compact_unique(list(raw.get("aliases", [])) + [brand], limit=15),
+        "known_ocr_distortions": list(raw.get("known_ocr_distortions", [])),
+        "qr_format": str(raw.get("qr_format") or _build_qr_pattern(brand)),
+        "batch_format": str(raw.get("batch_format") or "[A-Z0-9-]{4,20}"),
+        "expiry_format": str(raw.get("expiry_format") or "(MM/YYYY|YYYY-MM)"),
+        "manufacturing_date_format": str(raw.get("manufacturing_date_format") or "(MM/YYYY|YYYY-MM)"),
+        "uv_required": bool(raw.get("uv_required", True)),
+        "uv_signature": list(raw.get("uv_signature", [])),
+        "reference_images": list(raw.get("reference_images", [])),
+        "hologram_metadata": raw.get("hologram_metadata", {}),
+        "layout_anchors": raw.get("layout_anchors", {}),
+        "packaging_versions": list(raw.get("packaging_versions", [])),
+        "product_status": str(raw.get("product_status") or "active"),
+        "source_url": str(source_cfg.get("url") or source_id),
+        "source_confidence": float(source_cfg.get("confidence", 0.9)),
+        "data_sources": [source_id],
+        "last_refreshed": int(time.time()),
+        "last_verified": int(time.time()),
+    }
+
+    fingerprint = json.dumps(normalized, sort_keys=True, separators=(",", ":"))
+    return key, normalized, fingerprint
+
+
 def _build_canonical_outputs(runtime_db: Dict[str, Dict], regulatory_cache: Dict[str, Dict]) -> Dict[str, List[Dict]]:
     products: List[Dict] = []
     packaging_profiles: List[Dict] = []
@@ -513,6 +594,35 @@ def update_runtime_database(
                 inserted_or_updated += 1
     else:
         _record_snapshot(source_snapshots, "openfda_label", "disabled", "Source disabled in source_registry", 0)
+
+    for source_id in ["india_cdsco_bulletin", "manufacturer_feed", "distributor_feed"]:
+        source_cfg = registry.get(source_id, {})
+        if not bool(source_cfg.get("enabled", False)):
+            _record_snapshot(source_snapshots, source_id, "disabled", "Source disabled in source_registry", 0)
+            continue
+
+        path = str(source_cfg.get("url", "")).strip()
+        rows = _feed_records(path)
+        if not rows:
+            _record_snapshot(source_snapshots, source_id, "ok", "No rows found in feed", 0)
+            continue
+
+        _record_snapshot(source_snapshots, source_id, "ok", f"Loaded {len(rows)} rows from feed", len(rows))
+        for raw in rows:
+            normalized_bundle = _normalize_feed_row(raw, source_id=source_id, source_cfg=source_cfg)
+            if not normalized_bundle:
+                continue
+
+            fetched_records += 1
+            key, normalized, fingerprint = normalized_bundle
+            digest = hashlib.sha256(fingerprint.encode("utf-8")).hexdigest()
+            if digest in state.get("seen_hashes", {}):
+                skipped_unchanged += 1
+                continue
+
+            runtime_db[key] = _merge_entry(runtime_db.get(key, {}), normalized)
+            _upsert_hash_state(state, digest)
+            inserted_or_updated += 1
 
     # Enrich manual curated base records with canonical fields expected by full schema.
     for key, entry in list(runtime_db.items()):

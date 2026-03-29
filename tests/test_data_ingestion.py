@@ -1,6 +1,7 @@
 from src.data_ingestion.updater import (
     _build_canonical_outputs,
     _merge_entry,
+    _normalize_feed_row,
     _normalize_label_record,
     _schema_errors,
 )
@@ -120,3 +121,21 @@ def test_build_canonical_outputs_shapes_tables():
     assert len(out["products"]) == 1
     assert len(out["packaging_profiles"]) == 1
     assert len(out["regulatory_events"]) == 1
+
+
+def test_normalize_feed_row_parses_gtin_and_brand():
+    raw = {
+        "gtin": "890000000001",
+        "brand": "Crocin",
+        "dosage": 500,
+        "manufacturer": "GSK",
+        "expected_text_patterns": ["crocin"],
+        "aliases": ["Crocin 500"],
+    }
+    cfg = {"url": "database/feeds/manufacturer_feed.json", "confidence": 0.95}
+    parsed = _normalize_feed_row(raw, source_id="manufacturer_feed", source_cfg=cfg)
+    assert parsed is not None
+    key, normalized, _ = parsed
+    assert key == "crocin"
+    assert normalized["product_id"] == "890000000001"
+    assert normalized["brand"] == "Crocin"
